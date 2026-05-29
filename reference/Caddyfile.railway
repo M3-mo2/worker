@@ -1,0 +1,50 @@
+:{$PORT:8000} {
+    # فحص أمني: منع أي محاولة لتجاوز المسار
+    @path_traversal path_regexp \.\.
+    handle @path_traversal {
+        respond "Path Traversal Attempt Denied" 403
+    }
+
+    # --- Webhook: /webhook → webhook server (port 4000) ---
+    handle /webhook* {
+        reverse_proxy 127.0.0.1:4000
+    }
+
+    # --- WebApp / Code Editor (port 4005) ---
+    handle /webapp* {
+        reverse_proxy 127.0.0.1:4005
+    }
+    handle /edit* {
+        reverse_proxy 127.0.0.1:4005
+    }
+    handle /ping {
+        reverse_proxy 127.0.0.1:4005
+    }
+
+    # --- Internal API (port 4003) ---
+    handle /api* {
+        reverse_proxy 127.0.0.1:4003
+    }
+
+    # نطابق المسارات التي تبدأ بمعرف المستخدم ثم أي مسار بعده
+    # مثال: /12345/bot.php أو /12345/subdir/another.php
+    @bot_request path_regexp bot ^/(\d+)/(.+)$
+
+    handle @bot_request {
+        # تعريف متغير صريح لمسار المستخدم
+        vars root /app/user_bots/{re.bot.1}
+        # استخدام المتغير لتعيين المجلد الجذري
+        root * {http.vars.root}
+        rewrite * /{re.bot.2}
+
+        # استخدام المتغير في كل مكان لضمان الثبات
+        php_fastcgi unix//run/php/php8.2-fpm.sock {
+            env PHP_ADMIN_VALUE "open_basedir={http.vars.root}:/tmp/ \n auto_prepend_file={http.vars.root}/host_bootstrap.php"
+        }
+    }
+
+    # التعامل مع أي طلبات أخرى غير صالحة
+    handle {
+        respond "Invalid Request" 404
+    }
+}

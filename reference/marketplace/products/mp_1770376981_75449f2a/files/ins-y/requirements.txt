@@ -1,0 +1,4 @@
+pyTelegramBotAPI==4.19.1
+gold-dl
+python-dotenv==1.0.0
+eventlet==0.36.1
