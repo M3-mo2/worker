@@ -26,7 +26,7 @@
 # === Internal PHP execution server (localhost only) ===
 # FastAPI calls this to execute PHP via PHP-FPM
 :9000 {
-    @not_local not remote_addr 127.0.0.1
+    @not_local not client_ip 127.0.0.1
     handle @not_local {
         respond "Forbidden" 403
     }
