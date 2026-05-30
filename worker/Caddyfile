@@ -1,0 +1,54 @@
+# === Public-facing server (PORT) ===
+# Routes: /webhook/* and /api/* → FastAPI (port 8000)
+:{$PORT:8000} {
+    @path_traversal path_regexp \.\.
+    handle @path_traversal {
+        respond "Path Traversal Attempt Denied" 403
+    }
+
+    handle /webhook* {
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    handle /api* {
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    handle /health {
+        reverse_proxy 127.0.0.1:8000
+    }
+
+    handle {
+        respond "Not Found" 404
+    }
+}
+
+# === Internal PHP execution server (localhost only) ===
+# FastAPI calls this to execute PHP via PHP-FPM
+:9000 {
+    @not_local not remote_addr 127.0.0.1
+    handle @not_local {
+        respond "Forbidden" 403
+    }
+
+    @path_traversal path_regexp \.\.
+    handle @path_traversal {
+        respond "Path Traversal Attempt Denied" 403
+    }
+
+    @php_request path_regexp php ^/internal/php/(\d+)/(.+)$
+
+    handle @php_request {
+        vars root /app/user_bots/{re.php.1}
+        root * {http.vars.root}
+        rewrite * /{re.php.2}
+
+        php_fastcgi unix//run/php/php8.2-fpm.sock {
+            env PHP_ADMIN_VALUE "open_basedir={http.vars.root}:/tmp/ \n auto_prepend_file="
+        }
+    }
+
+    handle {
+        respond "Not Found" 404
+    }
+}
