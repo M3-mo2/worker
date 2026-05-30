@@ -140,7 +140,7 @@ async def deploy(request: Request, _=Depends(verify_secret)):
     save_bots()
 
     logger.info(f"Deployed bot for user {user_id}")
-    return {"status": "ok", "user_id": user_id, "message": "Bot deployed successfully"}
+    return {"status": "ok", "user_id": user_id, "webhook_secret": webhook_secret, "message": "Bot deployed successfully"}
 
 
 @app.post("/stop")
