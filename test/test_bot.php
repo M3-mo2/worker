@@ -18,6 +18,9 @@ if (!$message) {
 $chat_id = $message['chat']['id'];
 $text = $message['text'] ?? '';
 
+$config = json_decode(file_get_contents(__DIR__ . '/config.json'), true);
+$bot_token = $config['bot_token'] ?? '';
+
 if ($text === '/start') {
     $reply = "أهلاً! أنا بوت اختبار.";
 } elseif ($text === '/help') {
@@ -28,7 +31,7 @@ if ($text === '/start') {
     $reply = "قلت: " . $text;
 }
 
-$url = "https://api.telegram.org/bot{$_ENV['BOT_TOKEN']}/sendMessage";
+$url = "https://api.telegram.org/bot{$bot_token}/sendMessage";
 $data = json_encode([
     'chat_id' => $chat_id,
     'text' => $reply,

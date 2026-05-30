@@ -52,7 +52,7 @@ export SECRET="26c29f5306ee74dd9517bafee1d1a9560081145df7551af5fa9d2eec9fba0e42"
 export USER_ID="12345"
 
 # توكن البوت من تيليجرام
-export BOT_TOKEN="8651434899:AAGpWO75_oqavjPUb3DKBrc6hG2YNcifcLk"
+export BOT_TOKEN="8651434899:AAHUOdGnkaLzUH6e8tNtI8fv0u9pf1jiC1U"
 ```
 
 ---
@@ -139,7 +139,7 @@ curl -X POST "$WORKER_URL/deploy" \
   -H "X-Internal-Secret: $SECRET" \
   -F "user_id=$USER_ID" \
   -F "bot_token=$BOT_TOKEN" \
-  -F "file=@/tmp/test_bot.php"
+  -F "file=@/home/macro/php-nx/test/test_bot.php"
 ```
 
 ** الشرح:**

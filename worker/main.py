@@ -117,6 +117,10 @@ async def deploy(request: Request, _=Depends(verify_secret)):
     bot_file = user_dir / "bot.php"
     bot_file.write_bytes(content)
 
+    # Save config.json so PHP can read the token
+    config_file = user_dir / "config.json"
+    config_file.write_text(json.dumps({"bot_token": bot_token}))
+
     # Generate webhook secret
     webhook_secret = os.urandom(24).hex()
 
