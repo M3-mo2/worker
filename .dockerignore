@@ -1,0 +1,7 @@
+docs/
+reference/
+.git/
+.gitignore
+AGENTS.md
+*.md
+!worker/*.md

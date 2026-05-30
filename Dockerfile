@@ -19,21 +19,21 @@ WORKDIR /app
 
 # PHP security config
 RUN mkdir -p /etc/php/8.2/fpm/conf.d /etc/php/8.2/fpm/pool.d
-COPY php.ini /etc/php/8.2/fpm/conf.d/99-custom-security.ini
-COPY php-fpm.conf /etc/php/8.2/fpm/pool.d/zz-custom.conf
+COPY worker/php.ini /etc/php/8.2/fpm/conf.d/99-custom-security.ini
+COPY worker/php-fpm.conf /etc/php/8.2/fpm/pool.d/zz-custom.conf
 
 # Caddy config
-COPY Caddyfile /app/Caddyfile
+COPY worker/Caddyfile /app/Caddyfile
 
 # Supervisord config
-COPY supervisord.conf /app/supervisord.conf
+COPY worker/supervisord.conf /app/supervisord.conf
 
 # Python deps
-COPY requirements.txt .
+COPY worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # App code
-COPY main.py /app/main.py
+COPY worker/main.py /app/main.py
 
 # Create required directories
 RUN mkdir -p /app/data /app/user_bots /app/logs
