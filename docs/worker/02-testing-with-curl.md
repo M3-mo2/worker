@@ -46,13 +46,13 @@ openssl rand -hex 32
 export WORKER_URL="https://your-worker-url.up.railway.app"
 
 # السر المشترك (نفس القيمة اللي حطيتها في Railway)
-export SECRET="my_super_secret_key_123"
+export SECRET="26c29f5306ee74dd9517bafee1d1a9560081145df7551af5fa9d2eec9fba0e42"
 
 # رقم المستخدم (أي رقم للاختبار)
 export USER_ID="12345"
 
 # توكن البوت من تيليجرام
-export BOT_TOKEN="1234567890:ABCdefGHIjklMNOpqrsTUVwxyz"
+export BOT_TOKEN="8651434899:AAGpWO75_oqavjPUb3DKBrc6hG2YNcifcLk"
 ```
 
 ---

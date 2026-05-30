@@ -1,26 +1,12 @@
 # === Public-facing server (PORT) ===
-# Routes: /webhook/* and /api/* → FastAPI (port 8000)
+# Routes: /webhook/*, /api/*, /health → FastAPI (port 8000)
 :{$PORT:8000} {
     @path_traversal path_regexp \.\.
     handle @path_traversal {
         respond "Path Traversal Attempt Denied" 403
     }
 
-    handle /webhook* {
-        reverse_proxy 127.0.0.1:8000
-    }
-
-    handle /api* {
-        reverse_proxy 127.0.0.1:8000
-    }
-
-    handle /health {
-        reverse_proxy 127.0.0.1:8000
-    }
-
-    handle {
-        respond "Not Found" 404
-    }
+    reverse_proxy 127.0.0.1:8000
 }
 
 # === Internal PHP execution server (localhost only) ===
