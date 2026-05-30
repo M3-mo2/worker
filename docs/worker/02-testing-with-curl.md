@@ -4,21 +4,49 @@
 
 ```
 1. الـ Worker شغال على Railway (أو محلي)
-2. عندك INTERNAL_SECRET
+2. عندك INTERNAL_SECRET (أنشئته في Railway - شوف الخطوة التالية)
 3. عندك bot_token من تيليجرام (من @BotFather)
 4. عندك ملف PHP جاهز للاختبار
 ```
 
 ---
 
-## الخطوة 0: تحديد المتغيرات
+## الخطوة 0: إعداد Environment Variables على Railway
+
+قبل ما تختبر، لازم المتغيرات دي تكون موجودة في Railway dashboard:
+
+```
+1. افتح مشروعك على Railway
+2. اختر الـ Worker service
+3. روح على تب "Variables"
+4. أضف المتغيرات دي:
+```
+
+| المتغير | الشرح | مثال |
+|---------|-------|------|
+| `INTERNAL_SECRET` | سر تنتجه أنت (مش متغير Railway) | `my_super_secret_key_123` |
+| `MAIN_BOT_URL` | عنوان البوت الأساسي | `https://main-bot.up.railway.app` |
+
+**ملاحظة مهمة:** `INTERNAL_SECRET` مش متغير Railway جاهز — ده سر تنتجه أنت وتكتبه في Variables. أي نص معقد ينفع، مثلاً:
+
+```bash
+# توليد سر عشوائي (في الـ terminal)
+openssl rand -hex 32
+# النتيجة مثلاً: a1b2c3d4e5f6...
+```
+
+`RAILWAY_PUBLIC_DOMAIN` بيتحدد تلقائياً من Railway — مش محتاج تضيفه.
+
+---
+
+## الخطوة 0.5: تحديد المتغيرات للاختبار المحلي
 
 ```bash
 # عنوان الـ Worker (غيّره حسب عنوانك)
 export WORKER_URL="https://your-worker-url.up.railway.app"
 
-# السر المشترك (غيّره حسب الـ INTERNAL_SECRET بتاعك)
-export SECRET="your_internal_secret_here"
+# السر المشترك (نفس القيمة اللي حطيتها في Railway)
+export SECRET="my_super_secret_key_123"
 
 # رقم المستخدم (أي رقم للاختبار)
 export USER_ID="12345"

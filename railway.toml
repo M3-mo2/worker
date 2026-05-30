@@ -1,0 +1,11 @@
+[build]
+builder = "dockerfile"
+dockerfilePath = "worker/Dockerfile"
+buildContext = "worker"
+
+[deploy]
+startCommand = "supervisord -c /app/supervisord.conf"
+healthcheckPath = "/health"
+healthcheckTimeout = 300
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 5

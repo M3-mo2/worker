@@ -194,12 +194,14 @@ Worker ←→ PHP-FPM:
 
 ## الـ Environment Variables
 
-| المتغير | الشرح | مثال |
-|---------|-------|------|
-| `INTERNAL_SECRET` | السر المشترك بين البوت الأساسي والـ Worker | `my_secret_key_123` |
-| `RAILWAY_PUBLIC_DOMAIN` | الدومين اللي Railway بيديه للـ Worker | `worker-production-abc.up.railway.app` |
-| `MAIN_BOT_URL` | عنوان البوت الأساسي | `https://main-bot.up.railway.app` |
-| `PORT` | البورت العام (بيتحدد تلقائياً من Railway) | `8000` |
+| المتغير | الشرح | مثال | من فين؟ |
+|---------|-------|------|---------|
+| `INTERNAL_SECRET` | السر المشترك بين البوت الأساسي والـ Worker | `my_secret_key_123` | **تنشئه أنت** في Railway Variables |
+| `RAILWAY_PUBLIC_DOMAIN` | الدومين اللي Railway بيديه للـ Worker | `worker-production-abc.up.railway.app` | Railway بيحدده تلقائياً |
+| `MAIN_BOT_URL` | عنوان البوت الأساسي | `https://main-bot.up.railway.app` | **تنشئه أنت** في Railway Variables |
+| `PORT` | البورت العام (بيتحدد تلقائياً من Railway) | `8000` | Railway بيحدده تلقائياً |
+
+**ملاحظة مهمة:** `INTERNAL_SECRET` و `MAIN_BOT_URL` مش متغيرات Railway جاهزة — لازم تنشئهم يدوياً من Railway dashboard → service → Variables → New Variable.
 
 ---
 
