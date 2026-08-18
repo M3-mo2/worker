@@ -15,6 +15,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 # ===== Config =====
 INTERNAL_SECRET = os.environ.get("INTERNAL_SECRET", "")
 RAILWAY_PUBLIC_DOMAIN = os.environ.get("RAILWAY_PUBLIC_DOMAIN", "")
+CF_WEBHOOK_BASE = os.environ.get("CF_WEBHOOK_BASE", "")
 MAIN_BOT_URL = os.environ.get("MAIN_BOT_URL", "")
 CADDY_INTERNAL_PORT = int(os.environ.get("CADDY_INTERNAL_PORT", "9000"))
 
@@ -66,9 +67,29 @@ def load_bots():
     logger.info(f"Loaded {len(bots)} bots from disk")
 
 
+def _normalize_base(raw: str) -> str:
+    """يطبّع رابط الأساس: يشيل الفواصل الزايدة ويضيف https:// لو ناقص.
+
+    كده سواء المتغير فيه https:// أو لأ، النتيجة رابط صح من غير تكرار للـ scheme
+    (السبب الأصلي لخطأ "invalid webhook URL specified")."""
+    raw = (raw or "").strip().rstrip("/")
+    if not raw:
+        return ""
+    if not raw.startswith("http://") and not raw.startswith("https://"):
+        raw = "https://" + raw
+    return raw
+
+
 async def set_webhook(user_id: int, bot_token: str, webhook_secret: str):
-    worker_url = f"https://{RAILWAY_PUBLIC_DOMAIN}"
-    webhook_url = f"{worker_url}/webhook/{user_id}"
+    # نفضّل الـ Cloudflare router (CF_WEBHOOK_BASE) عشان الرابط نضيف وقابل للتوجيه،
+    # وإلا نقعّد على دومين الـ Railway بتاع العامل نفسه.
+    base = _normalize_base(CF_WEBHOOK_BASE) or _normalize_base(RAILWAY_PUBLIC_DOMAIN)
+    if not base:
+        raise HTTPException(
+            status_code=500,
+            detail="No CF_WEBHOOK_BASE or RAILWAY_PUBLIC_DOMAIN configured",
+        )
+    webhook_url = f"{base}/webhook/{user_id}"
     resp = await http_client.post(
         f"{TELEGRAM_API}/bot{bot_token}/setWebhook",
         json={
@@ -246,7 +267,7 @@ async def startup():
                 resp = await http_client.post(
                     f"{MAIN_BOT_URL}/worker/register",
                     json={
-                        "worker_url": f"https://{RAILWAY_PUBLIC_DOMAIN}",
+                        "worker_url": _normalize_base(RAILWAY_PUBLIC_DOMAIN),
                         "secret": INTERNAL_SECRET,
                     },
                     timeout=10.0,
