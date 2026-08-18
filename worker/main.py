@@ -137,10 +137,12 @@ async def deploy(request: Request, _=Depends(verify_secret)):
     user_dir.mkdir(parents=True, exist_ok=True)
     bot_file = user_dir / "bot.php"
     bot_file.write_bytes(content)
+    logger.info(f"Saved bot file for user {user_id}: {bot_file} ({len(content)} bytes)")
 
     # Save config.json so PHP can read the token
     config_file = user_dir / "config.json"
     config_file.write_text(json.dumps({"bot_token": bot_token}))
+    logger.info(f"Saved config for user {user_id} (token length {len(bot_token)})")
 
     # Generate webhook secret
     webhook_secret = os.urandom(24).hex()
@@ -211,25 +213,30 @@ async def health():
 async def webhook(user_id: int, request: Request):
     bot = bots.get(str(user_id))
     if not bot:
+        logger.warning(f"Webhook received for UNKNOWN user {user_id} — no bot registered")
         return PlainTextResponse("ok")
 
     if bot["status"] != "running":
+        logger.warning(f"Webhook received for STOPPED bot {user_id} (status={bot['status']})")
         return PlainTextResponse("ok")
 
     # Validate Telegram secret
     secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token", "")
     if not hmac.compare_digest(secret_token, bot.get("webhook_secret", "")):
+        logger.warning(f"Webhook secret MISMATCH for user {user_id} — ignoring")
         return PlainTextResponse("ok")
 
     # Check payload size
     body = await request.body()
     if len(body) > 1024 * 1024:
+        logger.warning(f"Webhook payload too large for user {user_id}: {len(body)} bytes")
         raise HTTPException(status_code=413, detail="Payload too large")
 
     # Validate JSON
     try:
         json.loads(body)
     except (json.JSONDecodeError, ValueError):
+        logger.warning(f"Webhook payload is not valid JSON for user {user_id}: {body[:200]!r}")
         return PlainTextResponse("ok")
 
     # Forward to Caddy internal for PHP-FPM execution
@@ -241,13 +248,28 @@ async def webhook(user_id: int, request: Request):
             headers={"Content-Type": "application/json"},
             timeout=30.0,
         )
-        return PlainTextResponse(resp.content, status_code=resp.status_code)
     except httpx.TimeoutException:
-        logger.error(f"Timeout executing PHP for user {user_id}")
+        logger.error(f"PHP EXECUTION TIMEOUT (>30s) for user {user_id} at {internal_url}")
         return PlainTextResponse("ok")
     except Exception as e:
-        logger.error(f"Error executing PHP for user {user_id}: {e}")
+        logger.error(f"PHP EXECUTION ERROR for user {user_id} at {internal_url}: {e!r}")
         return PlainTextResponse("ok")
+
+    # Log the outcome of running the bot file so problems are discoverable.
+    # PHP echoes errors into the body (display_errors=On), so surface it.
+    status = resp.status_code
+    preview = resp.text or ""
+    if len(preview) > 1000:
+        preview = preview[:1000] + "...[truncated]"
+    if status != 200:
+        logger.error(
+            f"PHP file RAN for user {user_id} but returned HTTP {status}. body={preview!r}"
+        )
+    else:
+        logger.info(
+            f"PHP file EXECUTED for user {user_id}: HTTP 200, body_preview={preview!r}"
+        )
+    return PlainTextResponse(resp.content, status_code=status)
 
 
 # ===== Lifecycle =====
