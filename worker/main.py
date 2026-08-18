@@ -1,7 +1,9 @@
 import os
+import re
 import json
 import time
 import hmac
+import hashlib
 import logging
 import asyncio
 from pathlib import Path
@@ -31,6 +33,10 @@ logger = logging.getLogger("worker")
 # ===== In-Memory State =====
 bots: dict[str, dict] = {}  # user_id -> bot info
 http_client: Optional[httpx.AsyncClient] = None
+
+# Track last error notification per user to avoid spamming (error hash -> timestamp)
+last_notified: dict[str, tuple[str, float]] = {}
+NOTIFY_COOLDOWN = 5 * 60  # seconds between duplicate error notifications
 
 # ===== FastAPI App =====
 app = FastAPI(title="PHP Worker")
@@ -104,6 +110,64 @@ async def set_webhook(user_id: int, bot_token: str, webhook_secret: str):
 async def delete_webhook(bot_token: str):
     resp = await http_client.post(f"{TELEGRAM_API}/bot{bot_token}/deleteWebhook")
     return resp.json()
+
+
+# ===== Error Detection & Owner Notification =====
+# PHP errors are rendered into the response body (display_errors=On, E_ALL).
+# The bot runs sandboxed (open_basedir + permission limits), so it cannot
+# self-report — the worker (which holds the token) must notify the owner.
+_PHP_ERROR_RE = re.compile(
+    r"(?:PHP\s+)?(?:Fatal error|Parse error|Warning|Notice|Deprecated|"
+    r"Uncaught\s+\w+\s+Error)\s*:[^\n]*?(?:on line\s+\d+|in\s+<b>)",
+    re.IGNORECASE,
+)
+
+
+def _detect_php_error(body: bytes) -> Optional[str]:
+    """Return a short error summary if the PHP output looks like a PHP error/warning."""
+    if not body:
+        return None
+    text = body.decode("utf-8", "replace")
+    m = _PHP_ERROR_RE.search(text)
+    if not m:
+        return None
+    start = max(0, m.start() - 40)
+    end = text.find("\n\n", m.start())
+    if end == -1 or end - m.start() > 1500:
+        end = min(len(text), m.start() + 1500)
+    return text[start:end].strip()
+
+
+async def _notify_owner(user_id: int, bot: dict, raw_text: str):
+    """Notify the bot owner (via their own bot) about a runtime error, deduped/cooldown."""
+    token = bot.get("bot_token")
+    if not token:
+        return
+
+    eh = hashlib.md5(raw_text[:2000].encode("utf-8", "replace")).hexdigest()
+    key = str(user_id)
+    now = time.time()
+    prev = last_notified.get(key)
+    if prev is not None and prev[0] == eh and (now - prev[1]) < NOTIFY_COOLDOWN:
+        return  # identical error already reported recently
+    last_notified[key] = (eh, now)
+
+    snippet = raw_text[:3000]
+    text = (
+        "⚠️ تنبيه: حدث خطأ أثناء تشغيل بوتك\n\n"
+        f"User ID: {user_id}\n\n"
+        f"الخطأ:\n{snippet}"
+    )
+    try:
+        r = await http_client.post(
+            f"{TELEGRAM_API}/bot{token}/sendMessage",
+            json={"chat_id": user_id, "text": text},
+            timeout=10.0,
+        )
+        if r.status_code != 200 or not r.json().get("ok"):
+            logger.warning(f"Failed to notify owner {user_id} of bot error: {r.text[:300]}")
+    except Exception as e:
+        logger.warning(f"Exception notifying owner {user_id} of bot error: {e}")
 
 
 # ===== API Endpoints =====
@@ -250,9 +314,13 @@ async def webhook(user_id: int, request: Request):
         )
     except httpx.TimeoutException:
         logger.error(f"PHP EXECUTION TIMEOUT (>30s) for user {user_id} at {internal_url}")
+        asyncio.create_task(
+            _notify_owner(user_id, bot, "PHP execution timed out after 30s (worker limit).")
+        )
         return PlainTextResponse("ok")
     except Exception as e:
         logger.error(f"PHP EXECUTION ERROR for user {user_id} at {internal_url}: {e!r}")
+        asyncio.create_task(_notify_owner(user_id, bot, f"Worker failed to execute PHP: {e!r}"))
         return PlainTextResponse("ok")
 
     # Log the outcome of running the bot file so problems are discoverable.
@@ -269,6 +337,15 @@ async def webhook(user_id: int, request: Request):
         logger.info(
             f"PHP file EXECUTED for user {user_id}: HTTP 200, body_preview={preview!r}"
         )
+
+    # The bot runs sandboxed (open_basedir + permission limits), so it cannot
+    # self-report errors. Detect a PHP runtime error and notify the bot owner.
+    err = _detect_php_error(resp.content)
+    if err is not None or status != 200:
+        asyncio.create_task(
+            _notify_owner(user_id, bot, resp.content.decode("utf-8", "replace"))
+        )
+
     return PlainTextResponse(resp.content, status_code=status)
 
 
