@@ -1,12 +1,12 @@
 FROM python:3.11-slim-bookworm
 
-# Install PHP 8.2 FPM + Caddy
+# Debian bookworm already ships PHP 8.2 in its main repo, so we DON'T need the
+# external sury PHP repo (it was a slow/flaky external apt fetch during build).
+# Only Caddy still requires an external repo (cloudsmith).
 RUN apt-get update && apt-get install -y \
     apt-transport-https curl gnupg ca-certificates lsb-release debian-keyring debian-archive-keyring \
     && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg \
     && curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list \
-    && curl -sSL https://packages.sury.org/php/apt.gpg | gpg --dearmor -o /usr/share/keyrings/php.gpg \
-    && echo "deb [signed-by=/usr/share/keyrings/php.gpg] https://packages.sury.org/php/ $(lsb_release -sc) main" > /etc/apt/sources.list.d/php.list \
     && apt-get update && apt-get install -y \
     php8.2-fpm php8.2-cli php8.2-curl php8.2-mbstring php8.2-xml php8.2-zip php8.2-gd php8.2-sqlite3 \
     caddy \
