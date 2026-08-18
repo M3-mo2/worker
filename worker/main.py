@@ -113,38 +113,43 @@ async def delete_webhook(bot_token: str):
 
 
 # ===== Error Detection & Owner Notification =====
-# PHP errors are rendered into the response body (display_errors=On, E_ALL).
+# PHP renders errors as HTML (display_errors=On, html_errors=On), e.g.
+# "<br />\n<b>Warning</b>: mkdir(): Permission denied ... on line <b>24</b>".
+# We strip HTML tags before matching so detection is format-agnostic.
 # The bot runs sandboxed (open_basedir + permission limits), so it cannot
 # self-report — the worker (which holds the token) must notify the owner.
+_TAG_RE = re.compile(r"<[^>]+>")
 _PHP_ERROR_RE = re.compile(
     r"(?:PHP\s+)?(?:Fatal error|Parse error|Warning|Notice|Deprecated|"
-    r"Uncaught\s+\w+\s+Error)\s*:[^\n]*?(?:on line\s+\d+|in\s+<b>)",
+    r"Uncaught\s+\w+\s+Error)\s*:[^\n]*?(?:on line\s+\d+|in\s+\S+\.php)",
     re.IGNORECASE,
 )
 
 
 def _detect_php_error(body: bytes) -> Optional[str]:
-    """Return a short error summary if the PHP output looks like a PHP error/warning."""
+    """Return a readable error summary if the PHP output looks like a PHP error/warning."""
     if not body:
         return None
     text = body.decode("utf-8", "replace")
-    m = _PHP_ERROR_RE.search(text)
+    stripped = _TAG_RE.sub(" ", text)
+    m = _PHP_ERROR_RE.search(stripped)
     if not m:
         return None
-    start = max(0, m.start() - 40)
-    end = text.find("\n\n", m.start())
+    # Extract a concise snippet around the first error (covers subsequent ones too)
+    start = max(0, m.start() - 20)
+    end = stripped.find("\n\n", m.start())
     if end == -1 or end - m.start() > 1500:
-        end = min(len(text), m.start() + 1500)
-    return text[start:end].strip()
+        end = min(len(stripped), m.start() + 1500)
+    return re.sub(r"\s+", " ", stripped[start:end]).strip()
 
 
-async def _notify_owner(user_id: int, bot: dict, raw_text: str):
+async def _notify_owner(user_id: int, bot: dict, error_text: str):
     """Notify the bot owner (via their own bot) about a runtime error, deduped/cooldown."""
     token = bot.get("bot_token")
     if not token:
         return
 
-    eh = hashlib.md5(raw_text[:2000].encode("utf-8", "replace")).hexdigest()
+    eh = hashlib.md5(error_text[:2000].encode("utf-8", "replace")).hexdigest()
     key = str(user_id)
     now = time.time()
     prev = last_notified.get(key)
@@ -152,11 +157,10 @@ async def _notify_owner(user_id: int, bot: dict, raw_text: str):
         return  # identical error already reported recently
     last_notified[key] = (eh, now)
 
-    snippet = raw_text[:3000]
     text = (
         "⚠️ تنبيه: حدث خطأ أثناء تشغيل بوتك\n\n"
         f"User ID: {user_id}\n\n"
-        f"الخطأ:\n{snippet}"
+        f"الخطأ:\n{error_text}"
     )
     try:
         r = await http_client.post(
@@ -342,9 +346,8 @@ async def webhook(user_id: int, request: Request):
     # self-report errors. Detect a PHP runtime error and notify the bot owner.
     err = _detect_php_error(resp.content)
     if err is not None or status != 200:
-        asyncio.create_task(
-            _notify_owner(user_id, bot, resp.content.decode("utf-8", "replace"))
-        )
+        reason = err if err is not None else f"HTTP {status} (no text error detected)"
+        asyncio.create_task(_notify_owner(user_id, bot, reason))
 
     return PlainTextResponse(resp.content, status_code=status)
 
