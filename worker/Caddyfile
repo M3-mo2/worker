@@ -30,7 +30,7 @@
         rewrite * /{re.php.2}
 
         php_fastcgi unix//run/php/php8.2-fpm.sock {
-            env PHP_ADMIN_VALUE "open_basedir={http.vars.root}:/tmp/ \n auto_prepend_file="
+            env PHP_ADMIN_VALUE "open_basedir={http.vars.root}:/tmp/ \n auto_prepend_file=/tmp/_bootstrap.php"
         }
     }
 

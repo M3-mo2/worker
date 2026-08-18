@@ -210,6 +210,17 @@ async def deploy(request: Request, _=Depends(verify_secret)):
     # Save config.json so PHP can read the token
     config_file = user_dir / "config.json"
     config_file.write_text(json.dumps({"bot_token": bot_token}))
+
+    # The folder was just created by this (root) process, but PHP-FPM runs as a
+    # non-root user (www-data). Make the user's own directory writable by it so
+    # bots can create subdirs / write caches, sessions, logs, etc. Confinement
+    # is still enforced per-request by open_basedir, so this stays safe.
+    try:
+        os.chmod(user_dir, 0o777)
+        os.chmod(bot_file, 0o644)
+        os.chmod(config_file, 0o644)
+    except OSError as e:
+        logger.warning(f"Could not chmod user dir {user_dir}: {e}")
     logger.info(f"Saved config for user {user_id} (token length {len(bot_token)})")
 
     # Generate webhook secret
