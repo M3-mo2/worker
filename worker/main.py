@@ -44,6 +44,38 @@ http_client: Optional[httpx.AsyncClient] = None
 last_notified: dict[str, tuple[str, float]] = {}
 NOTIFY_COOLDOWN = 5 * 60  # seconds between duplicate error notifications
 
+# ===== Per-user log persistence (Phase B) =====
+MAX_LOG_BYTES = 1 * 1024 * 1024  # 1 MB cap before trimming
+_TOKEN_RE = re.compile(r"\d+:[A-Za-z0-9_-]{30,}")  # Telegram bot-token shape
+
+
+def _redact(text: str) -> str:
+    """Mask Telegram bot tokens (digits:long-base64-ish) so logs stay safe to ship."""
+    return _TOKEN_RE.sub("<REDACTED_TOKEN>", text)
+
+
+def _append_user_log(user_id: int, kind: str, message: str) -> None:
+    """Append a line to the per-user error.log (created if absent), bounding growth.
+
+    The worker runs as root but PHP-FPM runs as www-data, and a bot's own PHP may
+    append to this file via ``error_log(..., 3, "error.log")``. We keep it 0o666 so
+    both can write (we do NOT chown to www-data only, because the root worker also
+    writes). Failures are non-fatal to request handling.
+    """
+    try:
+        path = get_user_dir(user_id) / "error.log"
+        if path.exists() and path.stat().st_size > MAX_LOG_BYTES:
+            # Trim to the most recent half to bound growth.
+            path.write_bytes(path.read_bytes()[-MAX_LOG_BYTES // 2:])
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} [{kind}] {_redact(message)}\n")
+        try:
+            os.chmod(path, 0o666)
+        except OSError:
+            pass
+    except OSError as e:
+        logger.warning(f"Failed to write user log for {user_id}: {e}")
+
 # ===== FastAPI App =====
 app = FastAPI(title="PHP Worker")
 
@@ -309,6 +341,24 @@ async def health():
     return {"status": "ok", "timestamp": time.time()}
 
 
+@app.get("/logs/{user_id}")
+async def logs(user_id: int, lines: int = 500, _=Depends(verify_secret)):
+    """Return the per-user error.log (last `lines` lines, redacted, capped ~50KB).
+
+    Returns 200 with an empty body when there is no log file yet — the bot decides
+    how to present "no logs".
+    """
+    path = get_user_dir(user_id) / "error.log"
+    if not path.exists():
+        return PlainTextResponse("", status_code=200)
+    text = path.read_text(encoding="utf-8", errors="replace")
+    if lines and lines > 0:
+        text = "\n".join(text.splitlines()[-lines:])
+    if len(text) > 50 * 1024:
+        text = text[-50 * 1024:]
+    return PlainTextResponse(_redact(text))
+
+
 # ===== Webhook Receiver =====
 @app.post("/webhook/{user_id}")
 async def webhook(user_id: int, request: Request):
@@ -351,13 +401,15 @@ async def webhook(user_id: int, request: Request):
         )
     except httpx.TimeoutException:
         logger.error(f"PHP EXECUTION TIMEOUT (>30s) for user {user_id} at {internal_url}")
-        asyncio.create_task(
-            _notify_owner(user_id, bot, "PHP execution timed out after 30s (worker limit).")
-        )
+        reason = "PHP execution timed out after 30s (worker limit)."
+        asyncio.create_task(_notify_owner(user_id, bot, reason))
+        _append_user_log(user_id, "ERROR", reason)
         return PlainTextResponse("ok")
     except Exception as e:
         logger.error(f"PHP EXECUTION ERROR for user {user_id} at {internal_url}: {e!r}")
-        asyncio.create_task(_notify_owner(user_id, bot, f"Worker failed to execute PHP: {e!r}"))
+        reason = f"Worker failed to execute PHP: {e!r}"
+        asyncio.create_task(_notify_owner(user_id, bot, reason))
+        _append_user_log(user_id, "ERROR", reason)
         return PlainTextResponse("ok")
 
     # Log the outcome of running the bot file so problems are discoverable.
@@ -381,6 +433,14 @@ async def webhook(user_id: int, request: Request):
     if err is not None or status != 200:
         reason = err if err is not None else f"HTTP {status} (no text error detected)"
         asyncio.create_task(_notify_owner(user_id, bot, reason))
+        _append_user_log(user_id, "ERROR", reason)
+    else:
+        # Success path: brief OK line with update id for traceability.
+        try:
+            upd = json.loads(body).get("update_id")
+            _append_user_log(user_id, "OK", f"update_id={upd}")
+        except Exception:
+            pass
 
     return PlainTextResponse(resp.content, status_code=status)
 
