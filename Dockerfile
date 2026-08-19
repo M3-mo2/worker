@@ -43,6 +43,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY worker/main.py /app/main.py
 
 # Create required directories
-RUN mkdir -p /app/data /app/user_bots /app/logs
+RUN mkdir -p /app/data /app/user_bots /app/logs /opt/phptmp \
+    && chmod 1777 /opt/phptmp
 
 CMD ["supervisord", "-c", "/app/supervisord.conf"]

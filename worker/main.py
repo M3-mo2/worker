@@ -350,13 +350,16 @@ async def health():
     if not os.path.exists("/run/php/php8.2-fpm.sock"):
         return PlainTextResponse("FPM socket not ready", status_code=503)
 
-    # b) Internal Caddy must be listening on CADDY_INTERNAL_PORT. ANY response
-    # (including 404) counts as "listening"; only a connection error / timeout
-    # means not ready. Use a short local client so we don't inherit the global
-    # 30s timeout.
+    # b) Internal Caddy must be listening AND its server block must be healthy.
+    # A 404 on "/" is expected (no handler for "/") and means the block is fine.
+    # A 400 means the internal server block is misconfigured (e.g. a broken
+    # php_fastcgi env value) and PHP cannot be served — so we must NOT report
+    # ready. Use a short local client so we don't inherit the global 30s timeout.
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
-            await client.get(f"http://127.0.0.1:{CADDY_INTERNAL_PORT}/")
+            r = await client.get(f"http://127.0.0.1:{CADDY_INTERNAL_PORT}/")
+        if r.status_code == 400 or r.status_code >= 500:
+            return PlainTextResponse("Internal Caddy misconfigured", status_code=503)
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException):
         return PlainTextResponse("Internal Caddy not ready", status_code=503)
     except Exception as e:
