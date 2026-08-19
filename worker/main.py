@@ -1,5 +1,6 @@
 import os
 import re
+import pwd
 import json
 import time
 import hmac
@@ -23,6 +24,8 @@ CADDY_INTERNAL_PORT = int(os.environ.get("CADDY_INTERNAL_PORT", "9000"))
 
 # Base directory for worker state. Defaults to /app (the container layout);
 # override with WORKER_BASE_DIR for local/dev runs outside the container.
+# RAILWAY PERSISTENCE: to survive restarts, mount a Railway volume at /data and
+# set WORKER_BASE_DIR=/data in the service env so user_bots/ and data/ persist.
 _BASE_DIR = Path(os.environ.get("WORKER_BASE_DIR", "/app"))
 BOTS_DIR = _BASE_DIR / "user_bots"
 DATA_FILE = _BASE_DIR / "data" / "bots.json"
@@ -218,12 +221,28 @@ async def deploy(request: Request, _=Depends(verify_secret)):
     # non-root user (www-data). Make the user's own directory writable by it so
     # bots can create subdirs / write caches, sessions, logs, etc. Confinement
     # is still enforced per-request by open_basedir, so this stays safe.
+    # Resolve www-data uid/gid once (Debian: 33/33).
     try:
-        os.chmod(user_dir, 0o777)
+        _ww = pwd.getpwnam("www-data")
+        _uid, _gid = _ww.pw_uid, _ww.pw_gid
+    except KeyError:
+        _uid = _gid = 33
+
+    try:
+        os.chmod(user_dir, 0o755)
         os.chmod(bot_file, 0o644)
         os.chmod(config_file, 0o644)
     except OSError as e:
         logger.warning(f"Could not chmod user dir {user_dir}: {e}")
+
+    # Hand the dir + files to www-data (the only writer, via PHP-FPM). Cross-user
+    # writes now need *both* a perms bug and an open_basedir bug. chown is root-only;
+    # in a non-root local run it will fail — warn and continue (matches chmod above).
+    for _path in (user_dir, bot_file, config_file):
+        try:
+            os.chown(_path, _uid, _gid)
+        except OSError as e:
+            logger.warning(f"Could not chown {_path}: {e}")
     logger.info(f"Saved config for user {user_id} (token length {len(bot_token)})")
 
     # Generate webhook secret

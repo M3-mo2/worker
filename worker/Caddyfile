@@ -11,7 +11,7 @@
 
 # === Internal PHP execution server (localhost only) ===
 # FastAPI calls this to execute PHP via PHP-FPM
-:9000 {
+127.0.0.1:9000 {
     @not_local not client_ip 127.0.0.1
     handle @not_local {
         respond "Forbidden" 403
@@ -30,7 +30,7 @@
         rewrite * /{re.php.2}
 
         php_fastcgi unix//run/php/php8.2-fpm.sock {
-            env PHP_ADMIN_VALUE "open_basedir={http.vars.root}:/tmp/ \n auto_prepend_file=/tmp/_compat.php"
+            env PHP_ADMIN_VALUE "open_basedir={http.vars.root}:/opt/phpcompat \n auto_prepend_file=/opt/phpcompat/_compat.php \n sys_temp_dir={http.vars.root} \n session.save_path={http.vars.root}"
         }
     }
 

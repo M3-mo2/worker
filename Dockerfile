@@ -24,9 +24,10 @@ COPY worker/php-fpm.conf /etc/php/8.2/fpm/pool.d/zz-custom.conf
 
 # Compatibility prepend: pins CWD to the bot's folder AND injects
 # framework-expected globals/constants (ID, TOKEN, $update, ...).
-# /tmp is within open_basedir, so it's allowed.
-COPY worker/compat.php /tmp/_compat.php
-RUN chmod 644 /tmp/_compat.php
+# Hosted read-only in /opt/phpcompat (NOT /tmp) so it is outside every bot's
+# open_basedir and not writable by user PHP. The COPY creates /opt/phpcompat.
+COPY worker/compat.php /opt/phpcompat/_compat.php
+RUN chmod 644 /opt/phpcompat/_compat.php
 
 # Caddy config
 COPY worker/Caddyfile /app/Caddyfile
