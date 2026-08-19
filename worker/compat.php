@@ -5,6 +5,8 @@
 //
 // Opt-out: drop a file named `__nocompat` in the bot folder to disable the
 // injection (keeps php://input intact for standard bots that read it).
+// Injection is ON by default so existing bots start working as soon as the
+// worker is redeployed (their old config.json may lack the "compat" flag).
 
 $__script = $_SERVER['SCRIPT_FILENAME'] ?? '';
 $__dir = is_string($__script) ? dirname($__script) : '';
@@ -14,11 +16,11 @@ if ($__dir && is_dir($__dir)) {
     @chdir($__dir);
 }
 
-// 2) Load config and decide whether to inject (never return early — just skip).
+// 2) Load config (for TOKEN); inject unless explicitly opted out.
 $__cfgPath = $__dir . '/config.json';
 $__cfg = is_file($__cfgPath) ? json_decode(@file_get_contents($__cfgPath), true) : [];
 
-if (!empty($__cfg['compat']) && !is_file($__dir . '/__nocompat')) {
+if (!is_file($__dir . '/__nocompat')) {
     // 3) Static values (no request body needed).
     if (preg_match('#/user_bots/(\d+)/#', $__script, $__m) && !defined('ID')) {
         define('ID', (int) $__m[1]);
