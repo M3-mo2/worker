@@ -21,8 +21,11 @@ CF_WEBHOOK_BASE = os.environ.get("CF_WEBHOOK_BASE", "")
 MAIN_BOT_URL = os.environ.get("MAIN_BOT_URL", "")
 CADDY_INTERNAL_PORT = int(os.environ.get("CADDY_INTERNAL_PORT", "9000"))
 
-BOTS_DIR = Path("/app/user_bots")
-DATA_FILE = Path("/app/data/bots.json")
+# Base directory for worker state. Defaults to /app (the container layout);
+# override with WORKER_BASE_DIR for local/dev runs outside the container.
+_BASE_DIR = Path(os.environ.get("WORKER_BASE_DIR", "/app"))
+BOTS_DIR = _BASE_DIR / "user_bots"
+DATA_FILE = _BASE_DIR / "data" / "bots.json"
 
 TELEGRAM_API = "https://api.telegram.org"
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB

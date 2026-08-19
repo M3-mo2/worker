@@ -25,7 +25,7 @@
     @php_request path_regexp php ^/internal/php/(\d+)/(.+)$
 
     handle @php_request {
-        vars root /app/user_bots/{re.php.1}
+        vars root {$WORKER_BASE_DIR:/app}/user_bots/{re.php.1}
         root * {http.vars.root}
         rewrite * /{re.php.2}
 
