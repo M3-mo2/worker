@@ -338,6 +338,27 @@ async def status(user_id: int, _=Depends(verify_secret)):
 
 @app.get("/health")
 async def health():
+    # C4: readiness check — Railway must not route live traffic to a not-ready
+    # stack. Confirm the full PHP execution path (FPM socket + internal Caddy)
+    # is up before reporting healthy; otherwise return 503 so the deploy waits.
+
+    # a) FPM socket must exist. If missing, PHP-FPM is not running yet.
+    if not os.path.exists("/run/php/php8.2-fpm.sock"):
+        return PlainTextResponse("FPM socket not ready", status_code=503)
+
+    # b) Internal Caddy must be listening on CADDY_INTERNAL_PORT. ANY response
+    # (including 404) counts as "listening"; only a connection error / timeout
+    # means not ready. Use a short local client so we don't inherit the global
+    # 30s timeout.
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            await client.get(f"http://127.0.0.1:{CADDY_INTERNAL_PORT}/")
+    except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException):
+        return PlainTextResponse("Internal Caddy not ready", status_code=503)
+    except Exception as e:
+        logger.warning(f"Health check internal call failed: {e!r}")
+        return PlainTextResponse("Internal Caddy not ready", status_code=503)
+
     return {"status": "ok", "timestamp": time.time()}
 
 
