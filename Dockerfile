@@ -22,10 +22,11 @@ RUN mkdir -p /etc/php/8.2/fpm/conf.d /etc/php/8.2/fpm/pool.d
 COPY worker/php.ini /etc/php/8.2/fpm/conf.d/99-custom-security.ini
 COPY worker/php-fpm.conf /etc/php/8.2/fpm/pool.d/zz-custom.conf
 
-# Bootstrap prepended to every bot: pins CWD to the bot's own folder so
-# relative writes stay confined. /tmp is within open_basedir, so it's allowed.
-COPY worker/bootstrap.php /tmp/_bootstrap.php
-RUN chmod 644 /tmp/_bootstrap.php
+# Compatibility prepend: pins CWD to the bot's folder AND injects
+# framework-expected globals/constants (ID, TOKEN, $update, ...).
+# /tmp is within open_basedir, so it's allowed.
+COPY worker/compat.php /tmp/_compat.php
+RUN chmod 644 /tmp/_compat.php
 
 # Caddy config
 COPY worker/Caddyfile /app/Caddyfile

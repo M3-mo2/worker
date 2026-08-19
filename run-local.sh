@@ -27,9 +27,9 @@ stop() {
 
 mkdir -p "$WORKER_BASE_DIR"
 
-# Caddyfile expects the bootstrap prepend at /tmp/_bootstrap.php
-if ! cp "$REPO_DIR/bootstrap.php" /tmp/_bootstrap.php 2>/dev/null; then
-  sudo cp "$REPO_DIR/bootstrap.php" /tmp/_bootstrap.php
+# Caddyfile expects the compatibility prepend at /tmp/_compat.php
+if ! cp "$REPO_DIR/compat.php" /tmp/_compat.php 2>/dev/null; then
+  sudo cp "$REPO_DIR/compat.php" /tmp/_compat.php
 fi
 
 # Apply the same PHP security config as production (open_basedir is set per

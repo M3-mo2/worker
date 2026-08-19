@@ -212,7 +212,7 @@ async def deploy(request: Request, _=Depends(verify_secret)):
 
     # Save config.json so PHP can read the token
     config_file = user_dir / "config.json"
-    config_file.write_text(json.dumps({"bot_token": bot_token}))
+    config_file.write_text(json.dumps({"bot_token": bot_token, "compat": True}))
 
     # The folder was just created by this (root) process, but PHP-FPM runs as a
     # non-root user (www-data). Make the user's own directory writable by it so
