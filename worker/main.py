@@ -64,6 +64,10 @@ def _append_user_log(user_id: int, kind: str, message: str) -> None:
     """
     try:
         path = get_user_dir(user_id) / "error.log"
+        # Ensure the bot's folder exists — after a worker redeploy without a
+        # persistent volume the bot dir can be gone while the bot is still
+        # registered, so the append would otherwise fail silently.
+        path.parent.mkdir(parents=True, exist_ok=True)
         if path.exists() and path.stat().st_size > MAX_LOG_BYTES:
             # Trim to the most recent half to bound growth.
             path.write_bytes(path.read_bytes()[-MAX_LOG_BYTES // 2:])
