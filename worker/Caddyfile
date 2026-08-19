@@ -39,6 +39,18 @@
         }
     }
 
+    ; Definitive PHP execution probe used by the worker's /health endpoint.
+    ; Runs a trivial script via the SAME php_fastcgi + FPM path as real bots,
+    ; but with a minimal open_basedir and NO compat prepend, so it isolates
+    ; "can PHP actually execute?" from per-bot concerns.
+    handle /__php_health {
+        root * /opt/phpcompat
+        rewrite * /_health.php
+        php_fastcgi unix//run/php/php8.2-fpm.sock {
+            env PHP_ADMIN_VALUE "open_basedir=/opt/phpcompat"
+        }
+    }
+
     handle {
         respond "Not Found" 404
     }

@@ -29,6 +29,11 @@ COPY worker/php-fpm.conf /etc/php/8.2/fpm/pool.d/zz-custom.conf
 COPY worker/compat.php /opt/phpcompat/_compat.php
 RUN chmod 644 /opt/phpcompat/_compat.php
 
+# Trivial PHP script used by the worker's /health endpoint to verify the full
+# Caddy -> PHP-FPM execution path actually works (see the /__php_health route).
+COPY worker/health.php /opt/phpcompat/_health.php
+RUN chmod 644 /opt/phpcompat/_health.php
+
 # Caddy config
 COPY worker/Caddyfile /app/Caddyfile
 

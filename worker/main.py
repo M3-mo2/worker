@@ -350,21 +350,27 @@ async def health():
     if not os.path.exists("/run/php/php8.2-fpm.sock"):
         return PlainTextResponse("FPM socket not ready", status_code=503)
 
-    # b) Internal Caddy must be listening AND its server block must be healthy.
-    # A 404 on "/" is expected (no handler for "/") and means the block is fine.
-    # A 400 means the internal server block is misconfigured (e.g. a broken
-    # php_fastcgi env value) and PHP cannot be served — so we must NOT report
-    # ready. Use a short local client so we don't inherit the global 30s timeout.
+    # b) Real PHP execution test. Hit the internal Caddy health route, which
+    # runs a trivial PHP script through the SAME php_fastcgi + FPM path real
+    # bots use. This confirms PHP actually executes end-to-end — merely that
+    # Caddy is listening is NOT enough (a misconfigured block can still 400).
+    # Use a short local client so we don't inherit the global 30s timeout.
     try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
-            r = await client.get(f"http://127.0.0.1:{CADDY_INTERNAL_PORT}/")
-        if r.status_code == 400 or r.status_code >= 500:
-            return PlainTextResponse("Internal Caddy misconfigured", status_code=503)
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"http://127.0.0.1:{CADDY_INTERNAL_PORT}/__php_health")
+        if r.status_code != 200 or "php-health-ok" not in r.text:
+            logger.error(
+                f"Health check FAILED: internal PHP test at 127.0.0.1:"
+                f"{CADDY_INTERNAL_PORT}/__php_health returned HTTP {r.status_code}, "
+                f"body={r.text[:300]!r}"
+            )
+            return PlainTextResponse("Internal PHP execution failed", status_code=503)
     except (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadTimeout, httpx.TimeoutException):
-        return PlainTextResponse("Internal Caddy not ready", status_code=503)
+        logger.error("Health check FAILED: internal Caddy/PHP not reachable")
+        return PlainTextResponse("Internal PHP not ready", status_code=503)
     except Exception as e:
-        logger.warning(f"Health check internal call failed: {e!r}")
-        return PlainTextResponse("Internal Caddy not ready", status_code=503)
+        logger.error(f"Health check FAILED: internal PHP call error: {e!r}")
+        return PlainTextResponse("Internal PHP not ready", status_code=503)
 
     return {"status": "ok", "timestamp": time.time()}
 
