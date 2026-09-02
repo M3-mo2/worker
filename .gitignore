@@ -3,3 +3,9 @@ __pycache__/
 
 # local dev runtime data (run-local.sh)
 .local_data/
+
+# Next.js panel (development/panel)
+development/panel/node_modules/
+development/panel/.next/
+development/panel/*.log
+development/panel/build/
