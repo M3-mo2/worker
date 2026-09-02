@@ -52,6 +52,8 @@
 │  │                                                        │      │
 │  │  POST /deploy    ← يستقبل ملف PHP + user_id + token   │      │
 │  │  POST /stop      ← يوقف بوت                            │      │
+│  │  POST /delete    ← يحذف البوت بالكامل                  │      │
+│  │  POST /files/delete ← يمسح ملف من البوت                │      │
 │  │  GET  /status    ← يرجع حالة البوت                     │      │
 │  │  POST /webhook   ← يستقبل updates من تيليجرام          │      │
 │  │                  ↓                                     │      │
@@ -123,6 +125,36 @@
   3. يرجع {"status": "ok"}
 ```
 
+### 2.5. `POST /delete` — حذف البوت بالكامل
+
+```
+البوت الأساسي بيبعت:
+  • user_id → رقم المستخدم
+
+الـ Worker بيعمل:
+  1. يتحقق من السر (X-Internal-Secret)
+  2. يبحث عن البوت في bots.json
+  3. يحذف الـ webhook من تيليجرام
+  4. يمسح فولدر المستخدم بالكامل (user_bots/{user_id}/)
+  5. يزيل البوت من bots.json
+  6. يرجع {"status": "ok"}
+```
+
+### 2.6. `POST /files/delete` — حذف ملف معيّن
+
+```
+البوت الأساسي بيبعت:
+  • user_id   → رقم المستخدم
+  • filename  → اسم الملف اللى عايز تمسحه (مثلاً: bot.php)
+
+الـ Worker بيعمل:
+  1. يتحقق من السر (X-Internal-Secret)
+  2. يتأكد إن الـ filename ما فيه غير اسم الملف (بدون مسارات)
+  3. يتأكد إن الـ filename .php بس
+  4. يمسح الملف من فولدر المستخدم
+  5. يرجع {"status": "ok"}
+```
+
 ### 3. `GET /status/{user_id}` — معرفة حالة البوت
 
 ```
@@ -182,13 +214,18 @@ Worker ←→ PHP-FPM:
 │   └── bots.json        # بيانات البوتات (user_id, token, status)
 ├── user_bots/
 │   ├── 12345/
-│   │   └── bot.php      # ملف بوت المستخدم 12345
+│   │   ├── bot.php      # ملف بوت المستخدم 12345
+│   │   ├── config.json  # {"bot_token": "...", "compat": true}
+│   │   └── error.log    # لوجات البوت (يُكتب عليها مرة لما يحصل خطأ)
 │   ├── 67890/
 │   │   └── bot.php      # ملف بوت المستخدم 67890
 │   └── ...
 └── logs/
     └── supervisord.log  # لوجات التشغيل
 ```
+
+> الفولدر `user_bots/{user_id}/` كامل بيُمسح بالكامل عبر `POST /delete`.
+> أما الملف داخله (مثل `bot.php`) فيُمسح فردياً عبر `POST /files/delete`.
 
 ---
 

@@ -1,5 +1,6 @@
 import os
 import re
+import shutil
 import pwd
 import json
 import time
@@ -325,6 +326,95 @@ async def stop(request: Request, _=Depends(verify_secret)):
 
     logger.info(f"Stopped bot for user {user_id}")
     return {"status": "ok", "user_id": user_id, "message": "Bot stopped"}
+
+
+@app.post("/delete")
+async def delete(request: Request, _=Depends(verify_secret)):
+    data = await request.json()
+    user_id = data.get("user_id")
+
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing user_id")
+
+    try:
+        user_id = int(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+
+    bot = bots.get(str(user_id))
+    if not bot:
+        raise HTTPException(status_code=404, detail="Bot not found")
+
+    # Delete webhook from Telegram first
+    try:
+        await delete_webhook(bot["bot_token"])
+    except Exception as e:
+        logger.warning(f"Failed to delete webhook for user {user_id} during delete: {e}")
+
+    # Remove from registry
+    del bots[str(user_id)]
+    save_bots()
+
+    # Delete the user's entire directory. user_id is a validated int, so
+    # str(user_id) is purely numeric and cannot escape BOTS_DIR. We still
+    # verify path containment defensively.
+    user_dir = get_user_dir(user_id)
+    if user_dir.exists():
+        resolved = user_dir.resolve()
+        if not str(resolved).startswith(str(BOTS_DIR.resolve()) + os.sep):
+            raise HTTPException(status_code=403, detail="Path traversal detected")
+        shutil.rmtree(user_dir)
+
+    logger.info(f"Deleted bot for user {user_id}")
+    return {"status": "ok", "user_id": user_id, "message": "Bot deleted successfully"}
+
+
+@app.post("/files/delete")
+async def delete_file(request: Request, _=Depends(verify_secret)):
+    data = await request.json()
+    user_id = data.get("user_id")
+    filename = data.get("filename")
+
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Missing user_id")
+    if not filename:
+        raise HTTPException(status_code=400, detail="Missing filename")
+
+    try:
+        user_id = int(user_id)
+    except (ValueError, TypeError):
+        raise HTTPException(status_code=400, detail="Invalid user_id")
+
+    # Prevent path traversal via filename — must be a simple filename, not a path
+    if "/" in filename or "\\" in filename or filename.startswith("."):
+        raise HTTPException(status_code=400, detail="Invalid filename")
+
+    # Only allow .php extension (the only file type users deploy)
+    if not filename.endswith(".php"):
+        raise HTTPException(status_code=400, detail="Only .php files can be deleted")
+
+    user_dir = get_user_dir(user_id)
+    file_path = user_dir / filename
+
+    # Verify the resolved path is within the user's directory
+    try:
+        resolved = file_path.resolve()
+    except OSError:
+        resolved = file_path  # file doesn't exist
+    user_dir_resolved = user_dir.resolve()
+    if not str(resolved).startswith(str(user_dir_resolved) + os.sep) and resolved != user_dir_resolved:
+        raise HTTPException(status_code=403, detail="Path traversal detected")
+
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        file_path.unlink()
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to delete file: {e}")
+
+    logger.info(f"Deleted file {filename} for user {user_id}")
+    return {"status": "ok", "user_id": user_id, "filename": filename, "message": "File deleted successfully"}
 
 
 @app.get("/status/{user_id}")

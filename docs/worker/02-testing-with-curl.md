@@ -324,15 +324,91 @@ curl -X GET "$WORKER_URL/status/$USER_ID" \
 
 ---
 
-## الخطوة 9: إعادة تشغيل البوت
+## الخطوة 9: حذف ملف معيّن (Delete File)
 
 ```bash
-# Deploy تاني بنفس الملف
-curl -X POST "$WORKER_URL/deploy" \
+curl -X POST "$WORKER_URL/files/delete" \
   -H "X-Internal-Secret: $SECRET" \
-  -F "user_id=$USER_ID" \
-  -F "bot_token=$BOT_TOKEN" \
-  -F "file=@/tmp/test_bot.php"
+  -H "Content-Type: application/json" \
+  -d "{\"user_id\": $USER_ID, \"filename\": \"bot.php\"}"
+```
+
+**المتوقع (نجاح):**
+```json
+{
+  "status": "ok",
+  "user_id": 12345,
+  "filename": "bot.php",
+  "message": "File deleted successfully"
+}
+```
+
+**المتوقع (فشل - ملف مش موجود):**
+```json
+{
+  "detail": "File not found"
+}
+```
+الحالة: 404
+
+**المتوقع (فشل - اسم ملف غير صالح):**
+```json
+{
+  "detail": "Invalid filename"
+}
+```
+الحالة: 400
+
+> ملاحظة: بعد ما تمسح bot.php، البوت ما يعرف يتواصل. استخدم `POST /delete` لو عايز تمسح البوت بالكامل.
+
+---
+
+## الخطوة 10: حذف البوت بالكامل (Delete)
+
+```bash
+curl -X POST "$WORKER_URL/delete" \
+  -H "X-Internal-Secret: $SECRET" \
+  -H "Content-Type: application/json" \
+  -d "{\"user_id\": $USER_ID}"
+```
+
+**المتوقع (نجاح):**
+```json
+{
+  "status": "ok",
+  "user_id": 12345,
+  "message": "Bot deleted successfully"
+}
+```
+
+**المتوقع (فشل - بوت مش موجود):**
+```json
+{
+  "detail": "Bot not found"
+}
+```
+الحالة: 404
+
+**اللي بيحصل جوه:**
+1. الـ webhook بيت حذف من تيليجرام
+2. فولدر `user_bots/{user_id}/` بالكامل بيت مسح
+3. البوت بيت إزالة من `bots.json`
+
+---
+
+## الخطوة 11: التأكد إن البوت اتحذف
+
+```bash
+curl -X GET "$WORKER_URL/status/$USER_ID" \
+  -H "X-Internal-Secret: $SECRET"
+```
+
+**المتوقع:**
+```json
+{
+  "user_id": 12345,
+  "status": "not_found"
+}
 ```
 
 ---
@@ -405,6 +481,57 @@ curl -X POST "$WORKER_URL/stop" \
 }
 ```
 الحالة: 404
+
+### اختبار حذف بوت مش موجود
+
+```bash
+curl -X POST "$WORKER_URL/delete" \
+  -H "X-Internal-Secret: $SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": 99999}'
+```
+
+**المتوقع:**
+```json
+{
+  "detail": "Bot not found"
+}
+```
+الحالة: 404
+
+### اختبار حذف ملف من غير ما يكون موجود
+
+```bash
+curl -X POST "$WORKER_URL/files/delete" \
+  -H "X-Internal-Secret: $SECRET" \
+  -H "Content-Type: application/json" \
+  -d "{\"user_id\": $USER_ID, \"filename\": \"nonexistent.php\"}"
+```
+
+**المتوقع:**
+```json
+{
+  "detail": "File not found"
+}
+```
+الحالة: 404
+
+### اختبار رفض حذف ملف غير .php
+
+```bash
+curl -X POST "$WORKER_URL/files/delete" \
+  -H "X-Internal-Secret: $SECRET" \
+  -H "Content-Type: application/json" \
+  -d "{\"user_id\": $USER_ID, \"filename\": \"config.json\"}"
+```
+
+**المتوقع:**
+```json
+{
+  "detail": "Only .php files can be deleted"
+}
+```
+الحالة: 400
 
 ### اختبار Payload كبير (أكبر من 1MB)
 
@@ -495,7 +622,7 @@ echo "Bot URL: https://t.me/$(echo $BOT_TOKEN | cut -d: -f1)"
 echo ""
 
 read -p "Press Enter to stop the bot..."
-
+ 
 echo "=== 6. Stop Bot ==="
 curl -s -X POST "$WORKER_URL/stop" \
   -H "X-Internal-Secret: $SECRET" \
@@ -504,6 +631,20 @@ curl -s -X POST "$WORKER_URL/stop" \
 echo ""
 
 echo "=== 7. Verify Stopped ==="
+curl -s -X GET "$WORKER_URL/status/$USER_ID" \
+  -H "X-Internal-Secret: $SECRET" | python3 -m json.tool
+echo ""
+
+read -p "Press Enter to delete the bot..."
+
+echo "=== 8. Delete Bot ==="
+curl -s -X POST "$WORKER_URL/delete" \
+  -H "X-Internal-Secret: $SECRET" \
+  -H "Content-Type: application/json" \
+  -d "{\"user_id\": $USER_ID}" | python3 -m json.tool
+echo ""
+
+echo "=== 9. Verify Deleted ==="
 curl -s -X GET "$WORKER_URL/status/$USER_ID" \
   -H "X-Internal-Secret: $SECRET" | python3 -m json.tool
 echo ""
@@ -529,6 +670,9 @@ chmod +x test_worker.sh
 | `File too large` | الملف أكبر من 10MB | قلّل حجم الملف |
 | `Telegram error: ...` | التوكن غلط | تأكد من `BOT_TOKEN` |
 | `Bot not found` | مفيش بوت بالـ user_id ده | اعمل deploy الأول |
+| `File not found` | الملف مش موجود | تأكد من اسم الملف |
+| `Only .php files can be deleted` | الملف مش .php | استخدم اسم ملف .php فقط |
+| `Invalid filename` | الاسم فيه مسار أو بدأ بـ نقطة | استخدم اسم ملف بسيط (مفيش مسارات) |
 | البوت مش بيرد على تيليجرام | الـ webhook متسجلش أو PHP فيها غلط | شوف الخطوة 6 (Debug) |
 | 502 Bad Gateway | PHP-FPM مش شغال | شوف لوجات Railway |
 
@@ -544,4 +688,7 @@ chmod +x test_worker.sh
 5. Debug             → GET  /webhookInfo من تيليجرام API
 6. Stop              → POST /stop (user_id)
 7. Verify            → GET  /status/{user_id} (يكون stopped)
+8. Delete File       → POST /files/delete (user_id + filename)
+9. Delete Bot        → POST /delete (user_id)
+10. Verify Deleted   → GET /status/{user_id} (يكون not_found)
 ```
