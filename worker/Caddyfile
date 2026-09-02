@@ -30,19 +30,19 @@
         rewrite * /{re.php.2}
 
         php_fastcgi unix//run/php/php8.2-fpm.sock {
-            ; Keep the Caddyfile PHP_ADMIN_VALUE to the MINIMAL per-request set that
-            ; must depend on the user path: open_basedir containment + the compat
-            ; prepend. Everything static (memory_limit, max_execution_time, temp/session
-            ; dirs) now lives in php-fpm.conf so this string stays simple and parses
-            ; reliably. NOTE: /opt/phptmp must be in open_basedir or temp functions fail.
+            # Keep the Caddyfile PHP_ADMIN_VALUE to the MINIMAL per-request set that
+            # must depend on the user path: open_basedir containment + the compat
+            # prepend. Everything static (memory_limit, max_execution_time, temp/session
+            # dirs) now lives in php-fpm.conf so this string stays simple and parses
+            # reliably. NOTE: /opt/phptmp must be in open_basedir or temp functions fail.
             env PHP_ADMIN_VALUE "open_basedir={http.vars.root}:/opt/phpcompat:/opt/phptmp \n auto_prepend_file=/opt/phpcompat/_compat.php"
         }
     }
 
-    ; Definitive PHP execution probe used by the worker's /health endpoint.
-    ; Runs a trivial script via the SAME php_fastcgi + FPM path as real bots,
-    ; but with a minimal open_basedir and NO compat prepend, so it isolates
-    ; "can PHP actually execute?" from per-bot concerns.
+    # Definitive PHP execution probe used by the worker's /health endpoint.
+    # Runs a trivial script via the SAME php_fastcgi + FPM path as real bots,
+    # but with a minimal open_basedir and NO compat prepend, so it isolates
+    # "can PHP actually execute?" from per-bot concerns.
     handle /__php_health {
         root * /opt/phpcompat
         rewrite * /_health.php
