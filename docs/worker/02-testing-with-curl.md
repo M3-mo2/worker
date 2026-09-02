@@ -635,7 +635,14 @@ curl -s -X GET "$WORKER_URL/status/$USER_ID" \
   -H "X-Internal-Secret: $SECRET" | python3 -m json.tool
 echo ""
 
-read -p "Press Enter to delete the bot..."
+echo "=== 7.5. Delete a Specific File (/files/delete) ==="
+curl -s -X POST "$WORKER_URL/files/delete" \
+  -H "X-Internal-Secret: $SECRET" \
+  -H "Content-Type: application/json" \
+  -d "{\"user_id\": $USER_ID, \"filename\": \"test_bot.php\"}" | python3 -m json.tool
+echo ""
+
+read -p "Press Enter to delete the bot..." 
 
 echo "=== 8. Delete Bot ==="
 curl -s -X POST "$WORKER_URL/delete" \

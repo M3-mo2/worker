@@ -349,11 +349,7 @@ async def delete(request: Request, _=Depends(verify_secret)):
     try:
         await delete_webhook(bot["bot_token"])
     except Exception as e:
-        logger.warning(f"Failed to delete webhook for user {user_id} during delete: {e}")
-
-    # Remove from registry
-    del bots[str(user_id)]
-    save_bots()
+        logger.warning(_redact(f"Failed to delete webhook for user {user_id} during delete: {e}"))
 
     # Delete the user's entire directory. user_id is a validated int, so
     # str(user_id) is purely numeric and cannot escape BOTS_DIR. We still
@@ -363,7 +359,16 @@ async def delete(request: Request, _=Depends(verify_secret)):
         resolved = user_dir.resolve()
         if not str(resolved).startswith(str(BOTS_DIR.resolve()) + os.sep):
             raise HTTPException(status_code=403, detail="Path traversal detected")
-        shutil.rmtree(user_dir)
+        try:
+            shutil.rmtree(user_dir)
+        except OSError as e:
+            logger.error(f"Failed to delete directory for user {user_id}: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed to delete user directory: {e}")
+
+    # Remove from registry (only after directory deletion succeeded, so a
+    # retry won't 404 — the bot stays registered if deletion fails).
+    del bots[str(user_id)]
+    save_bots()
 
     logger.info(f"Deleted bot for user {user_id}")
     return {"status": "ok", "user_id": user_id, "message": "Bot deleted successfully"}
