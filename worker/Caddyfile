@@ -1,16 +1,17 @@
 # === Global options ===
-# TLS is terminated at the Railway edge router — the worker only needs plain HTTP.
-# auto_https off disables Caddy's automatic HTTPS automation (ACME redirects/certs
-# for the public server). The internal server uses `tls internal` (Caddy's built-in
-# CA) and FastAPI connects over HTTPS with verify=False — this is the only
-# reliable way to avoid Caddy's unexpected HTTPS-on-non-loopback behavior.
-{
-	auto_https off
-}
+# TLS is terminated at the Railway edge router — the worker never needs real
+# ACME certs. Per-server `tls internal` (Caddy's built-in self-signed CA) on
+# BOTH blocks gives every listener a working HTTPS endpoint without depending
+# on auto_https. FastAPI connects to the internal one with verify=False.
+# (auto_https off was tried here but it suppresses site-level `tls internal`
+# in this Caddy build, breaking the internal health probe.)
 
 # === Public-facing server (PORT) ===
-# Routes: /webhook/*, /api/*, /health → FastAPI (port 8000)
+# Routes: /webhook/*, /api/*, /health → FastAPI (port 8000).
+# `tls internal` ensures Caddy serves HTTPS here too (Railway terminates TLS
+# at the edge, so the self-signed cert is never seen by clients).
 :{$PORT:8000} {
+	tls internal
 	@path_traversal path_regexp \.\.
 	handle @path_traversal {
 		respond "Path Traversal Attempt Denied" 403
@@ -22,9 +23,7 @@
 # === Internal PHP execution server ===
 # FastAPI calls this to execute PHP via PHP-FPM. Uses `tls internal` (Caddy's
 # built-in self-signed CA) — FastAPI connects via HTTPS with verify=False.
-# `tls internal` is the only Caddy-native way to guarantee a working TLS
-# endpoint here; auto_https off alone does not prevent Caddy from auto-serving
-# HTTPS on unspecified-IP listeners. @not_local still blocks non-localhost.
+# @not_local still blocks all non-localhost traffic.
 0.0.0.0:9000 {
 	tls internal
 	@not_local not client_ip 127.0.0.1
