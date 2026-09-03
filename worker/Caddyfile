@@ -1,66 +1,71 @@
 # === Global options ===
 # TLS is terminated at the Railway edge router — the worker only needs plain HTTP.
-# auto_https off prevents Caddy from applying HTTPS to any server block, including
-# the internal 127.0.0.1:9000 listener (Caddy may apply TLS to non-standard ports
-# in some builds, which breaks the FastAPI /health probe).
+# auto_https off disables Caddy's automatic HTTPS automation (ACME redirects/certs
+# for the public server), but does NOT prevent TLS on loopback-bound server blocks
+# (Caddy enables its internal CA for 127.0.0.1/localhost sites regardless).
+# The `tls none` directive in the internal server block below is what truly
+# disables TLS there.
 {
-    auto_https off
+	auto_https off
 }
 
 # === Public-facing server (PORT) ===
 # Routes: /webhook/*, /api/*, /health → FastAPI (port 8000)
 :{$PORT:8000} {
-    @path_traversal path_regexp \.\.
-    handle @path_traversal {
-        respond "Path Traversal Attempt Denied" 403
-    }
+	@path_traversal path_regexp \.\.
+	handle @path_traversal {
+		respond "Path Traversal Attempt Denied" 403
+	}
 
-    reverse_proxy 127.0.0.1:8000
+	reverse_proxy 127.0.0.1:8000
 }
 
 # === Internal PHP execution server (localhost only) ===
-# FastAPI calls this to execute PHP via PHP-FPM
+# FastAPI calls this to execute PHP via PHP-FPM over plain HTTP.
+# `tls none` is critical: Caddy auto-enables TLS via its internal CA for
+# loopback-bound servers, which breaks the /health probe and webhook forwarding.
 127.0.0.1:9000 {
-    @not_local not client_ip 127.0.0.1
-    handle @not_local {
-        respond "Forbidden" 403
-    }
+	tls none
+	@not_local not client_ip 127.0.0.1
+	handle @not_local {
+		respond "Forbidden" 403
+	}
 
-    @path_traversal path_regexp \.\.
-    handle @path_traversal {
-        respond "Path Traversal Attempt Denied" 403
-    }
+	@path_traversal path_regexp \.\.
+	handle @path_traversal {
+		respond "Path Traversal Attempt Denied" 403
+	}
 
-    @php_request path_regexp php ^/internal/php/(\d+)/(.+)$
+	@php_request path_regexp php ^/internal/php/(\d+)/(.+)$
 
-    handle @php_request {
-        vars root {$WORKER_BASE_DIR:/app}/user_bots/{re.php.1}
-        root * {http.vars.root}
-        rewrite * /{re.php.2}
+	handle @php_request {
+		vars root {$WORKER_BASE_DIR:/app}/user_bots/{re.php.1}
+		root * {http.vars.root}
+		rewrite * /{re.php.2}
 
-        php_fastcgi unix//run/php/php8.2-fpm.sock {
-            # Keep the Caddyfile PHP_ADMIN_VALUE to the MINIMAL per-request set that
-            # must depend on the user path: open_basedir containment + the compat
-            # prepend. Everything static (memory_limit, max_execution_time, temp/session
-            # dirs) now lives in php-fpm.conf so this string stays simple and parses
-            # reliably. NOTE: /opt/phptmp must be in open_basedir or temp functions fail.
-            env PHP_ADMIN_VALUE "open_basedir={http.vars.root}:/opt/phpcompat:/opt/phptmp \n auto_prepend_file=/opt/phpcompat/_compat.php"
-        }
-    }
+		php_fastcgi unix//run/php/php8.2-fpm.sock {
+			# Keep the Caddyfile PHP_ADMIN_VALUE to the MINIMAL per-request set that
+			# must depend on the user path: open_basedir containment + the compat
+			# prepend. Everything static (memory_limit, max_execution_time, temp/session
+			# dirs) now lives in php-fpm.conf so this string stays simple and parses
+			# reliably. NOTE: /opt/phptmp must be in open_basedir or temp functions fail.
+			env PHP_ADMIN_VALUE "open_basedir={http.vars.root}:/opt/phpcompat:/opt/phptmp \n auto_prepend_file=/opt/phpcompat/_compat.php"
+		}
+	}
 
-    # Definitive PHP execution probe used by the worker's /health endpoint.
-    # Runs a trivial script via the SAME php_fastcgi + FPM path as real bots,
-    # but with a minimal open_basedir and NO compat prepend, so it isolates
-    # "can PHP actually execute?" from per-bot concerns.
-    handle /__php_health {
-        root * /opt/phpcompat
-        rewrite * /_health.php
-        php_fastcgi unix//run/php/php8.2-fpm.sock {
-            env PHP_ADMIN_VALUE "open_basedir=/opt/phpcompat"
-        }
-    }
+	# Definitive PHP execution probe used by the worker's /health endpoint.
+	# Runs a trivial script via the SAME php_fastcgi + FPM path as real bots,
+	# but with a minimal open_basedir and NO compat prepend, so it isolates
+	# "can PHP actually execute?" from per-bot concerns.
+	handle /__php_health {
+		root * /opt/phpcompat
+		rewrite * /_health.php
+		php_fastcgi unix//run/php/php8.2-fpm.sock {
+			env PHP_ADMIN_VALUE "open_basedir=/opt/phpcompat"
+		}
+	}
 
-    handle {
-        respond "Not Found" 404
-    }
+	handle {
+		respond "Not Found" 404
+	}
 }
