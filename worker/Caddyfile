@@ -1,10 +1,9 @@
 # === Global options ===
 # TLS is terminated at the Railway edge router — the worker only needs plain HTTP.
 # auto_https off disables Caddy's automatic HTTPS automation (ACME redirects/certs
-# for the public server). Note: Caddy also auto-enables TLS via its internal CA
-# for server blocks bound to loopback addresses (127.0.0.1, localhost, ::1)
-# regardless of this setting. To serve plain HTTP on the internal server, we
-# bind to 0.0.0.0:9000 (non-loopback) instead, with @not_local guarding access.
+# for the public server). The internal server uses `tls internal` (Caddy's built-in
+# CA) and FastAPI connects over HTTPS with verify=False — this is the only
+# reliable way to avoid Caddy's unexpected HTTPS-on-non-loopback behavior.
 {
 	auto_https off
 }
@@ -21,11 +20,13 @@
 }
 
 # === Internal PHP execution server ===
-# FastAPI calls this to execute PHP via PHP-FPM over plain HTTP.
-# Bound to 0.0.0.0 (NOT 127.0.0.1) because Caddy auto-enables TLS via its
-# internal CA for loopback addresses — 0.0.0.0 avoids that while the
-# @not_local handler below still blocks all non-localhost traffic.
+# FastAPI calls this to execute PHP via PHP-FPM. Uses `tls internal` (Caddy's
+# built-in self-signed CA) — FastAPI connects via HTTPS with verify=False.
+# `tls internal` is the only Caddy-native way to guarantee a working TLS
+# endpoint here; auto_https off alone does not prevent Caddy from auto-serving
+# HTTPS on unspecified-IP listeners. @not_local still blocks non-localhost.
 0.0.0.0:9000 {
+	tls internal
 	@not_local not client_ip 127.0.0.1
 	handle @not_local {
 		respond "Forbidden" 403

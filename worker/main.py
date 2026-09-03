@@ -40,6 +40,7 @@ logger = logging.getLogger("worker")
 # ===== In-Memory State =====
 bots: dict[str, dict] = {}  # user_id -> bot info
 http_client: Optional[httpx.AsyncClient] = None
+internal_http_client: Optional[httpx.AsyncClient] = None  # talks to internal Caddy (HTTPS w/ self-signed cert)
 
 # Track last error notification per user to avoid spamming (error hash -> timestamp)
 last_notified: dict[str, tuple[str, float]] = {}
@@ -450,9 +451,11 @@ async def health():
     # bots use. This confirms PHP actually executes end-to-end — merely that
     # Caddy is listening is NOT enough (a misconfigured block can still 400).
     # Use a short local client so we don't inherit the global 30s timeout.
+    # The internal Caddy uses `tls internal` (self-signed), so we use https://
+    # and verify=False.
     try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"http://127.0.0.1:{CADDY_INTERNAL_PORT}/__php_health")
+        async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+            r = await client.get(f"https://127.0.0.1:{CADDY_INTERNAL_PORT}/__php_health")
         if r.status_code != 200 or "php-health-ok" not in r.text:
             logger.error(
                 f"Health check FAILED: internal PHP test at 127.0.0.1:"
@@ -520,13 +523,14 @@ async def webhook(user_id: int, request: Request):
         return PlainTextResponse("ok")
 
     # Forward to Caddy internal for PHP-FPM execution
-    internal_url = f"http://127.0.0.1:{CADDY_INTERNAL_PORT}/internal/php/{user_id}/bot.php"
+    # Internal Caddy uses `tls internal` (self-signed), so we use https://
+    # and verify=False. Safe: @not_local in Caddy blocks all non-localhost.
+    internal_url = f"https://127.0.0.1:{CADDY_INTERNAL_PORT}/internal/php/{user_id}/bot.php"
     try:
-        resp = await http_client.post(
+        resp = await internal_http_client.post(
             internal_url,
             content=body,
             headers={"Content-Type": "application/json"},
-            timeout=30.0,
         )
     except httpx.TimeoutException:
         logger.error(f"PHP EXECUTION TIMEOUT (>30s) for user {user_id} at {internal_url}")
@@ -577,8 +581,11 @@ async def webhook(user_id: int, request: Request):
 # ===== Lifecycle =====
 @app.on_event("startup")
 async def startup():
-    global http_client
+    global http_client, internal_http_client
     http_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0))
+    # Internal Caddy uses `tls internal` (self-signed), so verify=False is required.
+    # Safe here: we're connecting to localhost only (enforced by @not_local in Caddy).
+    internal_http_client = httpx.AsyncClient(timeout=httpx.Timeout(30.0), verify=False)
 
     BOTS_DIR.mkdir(parents=True, exist_ok=True)
     DATA_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -611,6 +618,8 @@ async def startup():
 async def shutdown():
     if http_client:
         await http_client.aclose()
+    if internal_http_client:
+        await internal_http_client.aclose()
 
 
 if __name__ == "__main__":
